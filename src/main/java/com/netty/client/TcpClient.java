@@ -1,8 +1,11 @@
 package com.netty.client;
 
 import com.alibaba.fastjson.JSON;
+import com.netty.constant.Contants;
+import com.netty.core.ServerWatcher;
 import com.netty.handler.SimpleClientHandler;
 import com.netty.param.Response;
+import com.netty.zk.ZookeeperFactory;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelInitializer;
@@ -16,11 +19,19 @@ import io.netty.handler.codec.Delimiters;
 import io.netty.handler.codec.string.StringDecoder;
 import io.netty.handler.codec.string.StringEncoder;
 import io.netty.util.AttributeKey;
+import org.apache.curator.framework.CuratorFramework;
+import org.apache.curator.framework.api.CuratorWatcher;
+import org.apache.zookeeper.Watcher;
+
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 public class TcpClient {
 
     static final Bootstrap b = new Bootstrap();
     static ChannelFuture f = null;
+    public static Set<String> realServerPath = new HashSet<String>();
     static {
         String host = "localhost";
         int port = 8080;
@@ -38,6 +49,22 @@ public class TcpClient {
 
             }
         });
+        CuratorFramework client = ZookeeperFactory.create();
+        try {
+            //因为没在catch里打断点不知道是因为path末尾加了/报错
+            List<String> serverPaths = client.getChildren().forPath(Contants.SERVER_PATH);
+            //加上zk监听服务器变化
+            CuratorWatcher watcher = new ServerWatcher();
+            client.getChildren().usingWatcher(watcher).forPath(Contants.SERVER_PATH);
+            for(String servePath : serverPaths){
+                realServerPath.add(servePath.split("#")[0]);
+            }
+            if(realServerPath.size() > 0){
+                host = realServerPath.toArray()[0].toString();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
         try {
             f = b.connect(host, port).sync();
         } catch (InterruptedException e) {
