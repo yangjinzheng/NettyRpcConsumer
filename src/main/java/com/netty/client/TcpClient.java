@@ -2,6 +2,7 @@ package com.netty.client;
 
 import com.alibaba.fastjson.JSON;
 import com.netty.constant.Contants;
+import com.netty.core.ChannelManager;
 import com.netty.core.ServerWatcher;
 import com.netty.handler.SimpleClientHandler;
 import com.netty.param.Response;
@@ -29,7 +30,7 @@ import java.util.Set;
 
 public class TcpClient {
 
-    static final Bootstrap b = new Bootstrap();
+    public static final Bootstrap b = new Bootstrap();
     static ChannelFuture f = null;
     public static Set<String> realServerPath = new HashSet<String>();
     static {
@@ -57,24 +58,37 @@ public class TcpClient {
             CuratorWatcher watcher = new ServerWatcher();
             client.getChildren().usingWatcher(watcher).forPath(Contants.SERVER_PATH);
             for(String servePath : serverPaths){
-                realServerPath.add(servePath.split("#")[0]);
+                String[] str = servePath.split("#");
+                int weight = Integer.parseInt(str[2]);
+                if(weight > 0) {
+                    for (int w = 0; w <= weight; w++) {
+                        ChannelManager.realServerPath.add(str[0] + "#" + str[1]);
+                        ChannelFuture f = TcpClient.b.connect(str[0], Integer.valueOf(str[1]));
+                        ChannelManager.addChannel(f);
+                    }
+                }
+
             }
-            if(realServerPath.size() > 0){
-                host = realServerPath.toArray()[0].toString();
+            if(ChannelManager.realServerPath.size() > 0){
+                String[] hostAndPort = ChannelManager.realServerPath.toArray()[0].toString().split("#");
+                host = hostAndPort[0];
+                port = Integer.valueOf(hostAndPort[1]);
             }
         } catch (Exception e) {
             e.printStackTrace();
         }
-        try {
-            f = b.connect(host, port).sync();
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
+//        try {
+//            f = b.connect(host, port).sync();
+//        } catch (InterruptedException e) {
+//            e.printStackTrace();
+//        }
     }
+    static int i = 0;
 
     //发送数据长连接
     //一个链接考虑并发问题：1.request:唯一请求id，请求内容
     public static Response send(ClientRequest request){
+        f = ChannelManager.getChannel(ChannelManager.position);
         f.channel().writeAndFlush(JSON.toJSONString(request));
         f.channel().writeAndFlush("\r\n");
         DefaultFuture df = new DefaultFuture(request);
